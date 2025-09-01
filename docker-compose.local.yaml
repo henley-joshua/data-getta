@@ -1,0 +1,108 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    environment:
+      POSTGRES_USER: dbgetta
+      POSTGRES_PASSWORD: localdev123
+      POSTGRES_DB: datagetta_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/sql:/sql
+    networks:
+      - datagetta_net
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dbgetta -d datagetta_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  next:
+    image: node:21
+    container_name: next
+    environment:
+      DATABASE_URL: "postgresql://dbgetta:localdev123@postgres:5432/datagetta_db"
+      NEXTAUTH_SECRET: "local-dev-secret-key-change-this-in-actual-prod"
+      NEXTAUTH_URL: "http://localhost:3000"
+    volumes:
+      - ./ui/the-eye:/next-app
+      - node_modules:/next-app/node_modules
+    ports:
+      - "3000:3000"
+    networks:
+      - datagetta_net
+    working_dir: /next-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Installing dependencies..."
+        npm ci
+        echo "Setting up Prisma..."
+        npx prisma generate || echo "Prisma generate failed, continuing..."
+        echo "Starting in dev mode..."
+        npm run dev
+
+  python:
+    image: python:3.10-slim
+    container_name: python
+    mem_limit: 4g
+    networks:
+      - datagetta_net
+    volumes:
+      - ./csvparser:/csvparser
+      - python_data:/data
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        apt update && apt install -y git gcc pkg-config libcairo2-dev
+        echo "Creating mock data files..."
+        mkdir -p /data
+        echo "mock,data,for,local,dev" > /data/combined_dataset.csv
+        echo "localhost:5432:datagetta_db:dbgetta:localdev123" > /data/db_info.txt
+        cd csvparser
+        if [ -f requirements.txt ]; then
+          pip install -r requirements.txt
+        else
+          echo "No requirements.txt found in csvparser"
+        fi
+        echo "Python container ready for development"
+        tail -f /dev/null
+
+  # Database initialization service (runs once)
+  db-init:
+    image: postgres:16
+    container_name: db-init
+    environment:
+      PGPASSWORD: "localdev123"
+    networks:
+      - datagetta_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./database/sql:/sql
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Initializing database schema..."
+        psql -h postgres -U dbgetta -d datagetta_db -f /sql/pre-schema.sql || echo "pre-schema.sql not found or failed"
+        psql -h postgres -U dbgetta -d datagetta_db -f /sql/schema.sql || echo "schema.sql not found or failed"
+        psql -h postgres -U dbgetta -d datagetta_db -f /sql/functions.sql || echo "functions.sql not found or failed"
+        psql -h postgres -U dbgetta -d datagetta_db -f /sql/views.sql || echo "views.sql not found or failed"
+        psql -h postgres -U dbgetta -d datagetta_db -f /sql/add-conferences.sql || echo "add-conferences.sql not found or failed"
+        psql -h postgres -U dbgetta -d datagetta_db -f /sql/seasons.sql || echo "seasons.sql not found or failed"
+        echo "Database initialization complete"
+
+networks:
+  datagetta_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  node_modules:
+  python_data:
