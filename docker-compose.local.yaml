@@ -55,22 +55,19 @@ services:
       - datagetta_net
     volumes:
       - ./csvparser:/csvparser
-      - python_data:/data
+      - ../ext_files/combined_dataset.csv:/combined_dataset.csv
+      - ../ext_files/db_info.txt:/db_info.txt
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         apt update && apt install -y git gcc pkg-config libcairo2-dev
-        echo "Creating mock data files..."
-        mkdir -p /data
-        echo "mock,data,for,local,dev" > /data/combined_dataset.csv
-        echo "localhost:5432:datagetta_db:dbgetta:localdev123" > /data/db_info.txt
-        cd csvparser
-        if [ -f requirements.txt ]; then
-          pip install -r requirements.txt
-        else
-          echo "No requirements.txt found in csvparser"
-        fi
-        echo "Python container ready for development"
+        git clone https://github.com/tmgavron/shifting_model.git
+        cp /combined_dataset.csv shifting_model/Data/
+        cd shifting_model && pip install -r requirements.txt && cd /
+        git clone https://github.com/snoylnerual/SDProjectAIOrange.git
+        cp /db_info.txt SDProjectAIOrange/
+        cd SDProjectAIOrange && pip install -r requirements.txt && cd /
+        cd csvparser && pip install -r requirements.txt
         tail -f /dev/null
 
   # Database initialization service (runs once)
@@ -106,3 +103,4 @@ volumes:
   postgres_data:
   node_modules:
   python_data:
+  csvparser:
