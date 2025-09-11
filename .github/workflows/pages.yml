@@ -17,24 +17,29 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
-    env:
-      VITE_SUPABASE_PROJECT_URL: ${{ vars.VITE_SUPABASE_PROJECT_URL }}
-      VITE_SUPABASE_API_KEY: ${{ vars.VITE_SUPABASE_API_KEY }}
-
     defaults:
       run:
         working-directory: ui
-
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v5
         with:
           node-version: '>=22'
           package-manager-cache: false
+
+      - name: Create env file at repo root
+        run: |
+          printf "VITE_SUPABASE_PROJECT_URL=%s\nVITE_SUPABASE_API_KEY=%s\n" \
+            "${{ vars.VITE_SUPABASE_PROJECT_URL }}" \
+            "${{ vars.VITE_SUPABASE_API_KEY }}" > ../.env.production
+          # sanity (won't print secrets)
+          test -s ../.env.production && echo ".env.production created"
+
       - run: npm install
       - name: Build
         run: npm run build
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
